@@ -131,41 +131,42 @@ export default function Dashboard() {
     if (query.toLowerCase().trim() === 'my location' || query.trim() === '') return currentPos;
     
     const apiKey = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
-    console.log("🔍 Geocoding query:", query, "with API key length:", apiKey?.length || 0);
-
-    if (!apiKey) {
-      console.warn("⚠️ No TomTom API Key found in .env.local. Falling back to OSM.");
-    }
     
-    // 1. Try Backend Proxy (Preferred for avoiding adblocker/CORS)
+    // Bounds for Greater Hyderabad to prevent "out of country" results
+    const isWithinHyderabad = (lat: number, lng: number) => {
+      return lat >= 16.5 && lat <= 18.0 && lng >= 77.5 && lng <= 79.5;
+    };
+
     try {
       const url = `http://localhost:8000/api/proxy/geocode?query=${encodeURIComponent(query)}`;
-      console.log("🌐 Calling Geocoding Proxy...");
-      
       const response = await fetch(url);
-      if (!response.ok) throw new Error(`Proxy Error: ${response.status}`);
-
       const data = await response.json();
-      if (data?.results?.[0]) {
-        const { lat, lon } = data.results[0].position;
-        console.log(`✅ Proxy found ${query}:`, lat, lon);
+      
+      if (data?.results?.length > 0) {
+        // Find the first result that is actually in the Hyderabad region
+        const result = data.results.find((r: any) => isWithinHyderabad(r.position.lat, r.position.lon)) || data.results[0];
+        const { lat, lon } = result.position;
+
+        if (!isWithinHyderabad(lat, lon)) {
+           console.warn("📍 Location found but outside Hyderabad bounds:", lat, lon);
+           // We'll still return it but the handleSearch will catch it if it's too far
+        }
         return { lat, lng: lon };
       }
     } catch (proxyErr: any) {
       console.warn("⚠️ Proxy failed, falling back to direct OSM:", proxyErr.message);
     }
 
-    // 2. Fallback to Nominatim (Global OpenStreetMap search)
+    // 2. Fallback to Nominatim (Biased to India)
     try {
-      console.log("🔄 Using OSM Nominatim fallback...");
-      const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+      const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + " Hyderabad")}&limit=1`, {
         headers: { 'User-Agent': 'RakshaPath/1.0' },
         timeout: 8000
       });
       if (res.data?.[0]) {
-        const result = { lat: parseFloat(res.data[0].lat), lng: parseFloat(res.data[0].lon) };
-        console.log("✅ OSM found location:", result);
-        return result;
+        const lat = parseFloat(res.data[0].lat);
+        const lon = parseFloat(res.data[0].lon);
+        return { lat, lng: lon };
       }
     } catch (e: any) { 
       console.error("❌ Nominatim fallback failed:", e.message); 
@@ -261,14 +262,20 @@ export default function Dashboard() {
     setSelectedRoute({ ...route, loading: true });
     const apiKey = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
 
+    console.log("🚀 Starting Navigation for route:", route.type);
+    console.log("📍 Origin:", route.origin);
+    console.log("📍 Destination:", route.dest);
+
     // TRY TOMTOM ROUTING FIRST
-    if (apiKey) {
+    if (apiKey && apiKey !== 'your_tomtom_api_key') {
       try {
         let routeType = 'fastest';
-        if (route.id === 'S') routeType = 'shortest'; // Visually represents safest path by avoiding main highways
-        else if (route.id === 'B') routeType = 'eco'; // Visually represents balanced path
+        if (route.id === 'S') routeType = 'shortest'; 
+        else if (route.id === 'B') routeType = 'eco';
 
         const url = `https://api.tomtom.com/routing/1/calculateRoute/${route.origin.lat},${route.origin.lng}:${route.dest.lat},${route.dest.lng}/json?key=${apiKey}&routeType=${routeType}&traffic=true&instructionsType=text`;
+        console.log("🌐 Calling TomTom Routing API...");
+        
         const response = await axios.get(url);
         
         if (response.data.routes && response.data.routes.length > 0) {
@@ -284,21 +291,19 @@ export default function Dashboard() {
             distance: (response.data.routes[0].summary.lengthInMeters / 1000).toFixed(2) + ' km',
             instructions
           });
-
-          if (mapRef.current && (window as any).google) {
-               const bounds = new google.maps.LatLngBounds();
-               path.forEach((p: any) => bounds.extend(p));
-               mapRef.current.fitBounds(bounds);
-          }
+          console.log("✅ TomTom Route Loaded successfully.");
           return;
         }
-      } catch (error) {
-        console.warn("TomTom Routing failed, trying OSRM fallback...");
+      } catch (error: any) {
+        console.warn("⚠️ TomTom Routing failed:", error.response?.data?.error?.description || error.message);
       }
+    } else {
+      console.warn("⚠️ No valid TomTom API Key found, skipping to fallback.");
     }
 
     // USE OSRM AS SECONDARY
     try {
+      console.log("🔄 Trying OSRM fallback routing...");
       const url = `https://router.project-osrm.org/route/v1/driving/${route.origin.lng},${route.origin.lat};${route.dest.lng},${route.dest.lat}?overview=full&geometries=geojson&steps=true`;
       const response = await axios.get(url);
       
@@ -316,19 +321,14 @@ export default function Dashboard() {
           distance: (response.data.routes[0].distance / 1000).toFixed(2) + ' km',
           instructions
         });
-
-        if (mapRef.current && (window as any).google) {
-          const bounds = new google.maps.LatLngBounds();
-          path.forEach((p: any) => bounds.extend(p));
-          mapRef.current.fitBounds(bounds);
-        }
+        console.log("✅ OSRM Fallback Route Loaded.");
       } else {
-        throw new Error("No routes found");
+        throw new Error("No routes found in OSRM response.");
       }
-    } catch (error) {
-      console.warn("OSRM failed. No more routing fallbacks available.");
+    } catch (error: any) {
+      console.error("❌ All routing fallbacks failed:", error.message);
       setSelectedRoute(null);
-      alert("Routing service currently unavailable for this area. Please try a different landmark.");
+      alert(`Routing Unavailable: ${error.message}. \n\nCheck your internet connection or try a different landmark in Hyderabad.`);
     }
   };
 

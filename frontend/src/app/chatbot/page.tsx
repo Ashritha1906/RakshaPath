@@ -1,12 +1,13 @@
 'use client';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
-import { Send, Bot, User, Mic, Volume2, VolumeX, Activity, Navigation2, ShieldAlert, MapPin } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { Send, Bot, User, Mic, Volume2, VolumeX, Activity } from 'lucide-react';
 import axios from 'axios';
 
 export default function Chatbot() {
   const [messages, setMessages] = useState([
-    { role: 'bot', text: 'Hello! I am your AI Safety Assistant. How can I help you today? You can ask me things like "Nearest hospital?" or "What should I do in an emergency?"' }
+    { role: 'bot', text: '### 🛡️ Safety Status: Online\nHello! I am your Raksha AI Assistant.\n\n### 📝 Strategic Advisory\n- **Ask**: "Nearest hospital?"\n- **Ask**: "Emergency protocols?"\n- **Ask**: "Current risk assessment?"' }
   ]);
   const [input, setInput] = useState('');
 
@@ -36,7 +37,8 @@ export default function Chatbot() {
           message: text,
           history: history,
           lat: lat,
-          lon: lon
+          lon: lon,
+          language: spokenLang
         });
         
         const replyText = res.data.reply;
@@ -44,16 +46,18 @@ export default function Chatbot() {
         
         // Auto-speak reply if voice mode is on
         if (voiceMode && 'speechSynthesis' in window) {
-          window.speechSynthesis.cancel(); // Cancel any ongoing speech
-          const utterance = new SpeechSynthesisUtterance(replyText);
-          utterance.lang = spokenLang; // Match TTS output voice to the selected rural language
+          window.speechSynthesis.cancel(); 
+          // Clean markdown for TTS
+          const cleanText = replyText.replace(/[#*`]/g, '');
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          utterance.lang = spokenLang; 
           utterance.pitch = 1.1;
           utterance.rate = 1.0;
           window.speechSynthesis.speak(utterance);
         }
 
       } catch (err) {
-        setMessages(prev => [...prev, { role: 'bot', text: "I'm having trouble connecting to my safety neural network. Please check your connection." }]);
+        setMessages(prev => [...prev, { role: 'bot', text: "### ⚠️ System Error\nI'm having trouble connecting to my safety neural network. Please check your connection." }]);
       }
     };
     getBotResponse();
@@ -69,7 +73,7 @@ export default function Chatbot() {
   // --- Voice Features ---
   const [voiceMode, setVoiceMode] = useState(true);
   const [listening, setListening] = useState(false);
-  const [spokenLang, setSpokenLang] = useState('en-US'); // Default to English, but adjustable for rural languages
+  const [spokenLang, setSpokenLang] = useState('en-US'); 
   
   const toggleListen = () => {
     if (listening) {
@@ -89,7 +93,6 @@ export default function Chatbot() {
         
         recognition.onresult = (event: any) => {
           const transcript = event.results[0][0].transcript;
-          // Walkie-Talkie Mode: Instantly send the message when speech finishes processing
           submitMessage(transcript);
         };
         
@@ -126,7 +129,7 @@ export default function Chatbot() {
                 <option value="hi-IN">Hindi (हिंदी)</option>
                 <option value="te-IN">Telugu (తెలుగు)</option>
                 <option value="ta-IN">Tamil (தமிழ்)</option>
-                <option value="mr-IN">Marathi (मराठी)</option>
+                <option value="mr-IN">Marathi (మరాठी)</option>
               </select>
 
               <button 
@@ -155,7 +158,9 @@ export default function Chatbot() {
                   display: 'flex', gap: '12px', alignItems: 'flex-start'
                 }}>
                   {msg.role === 'bot' ? <Bot size={20} style={{ flexShrink: 0, marginTop: '2px' }} /> : <User size={20} style={{ flexShrink: 0, marginTop: '2px' }} />}
-                  <span style={{ lineHeight: 1.5 }}>{msg.text}</span>
+                  <div className="markdown-chat" style={{ lineHeight: 1.5, fontSize: '0.95rem' }}>
+                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  </div>
                 </div>
               </div>
             ))}

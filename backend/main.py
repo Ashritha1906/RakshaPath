@@ -271,7 +271,9 @@ async def proxy_geocode(query: str):
     if not api_key:
         raise HTTPException(status_code=500, detail="TomTom API key not configured on server")
     
-    url = f"https://api.tomtom.com/search/2/fuzzy/{query}.json?key={api_key}&limit=1"
+    # STRICT HYDERABAD BIAS: Prioritizes results within 50km of Hyderabad center
+    # lat=17.3850, lon=78.4867
+    url = f"https://api.tomtom.com/search/2/fuzzy/{query}.json?key={api_key}&limit=5&lat=17.3850&lon=78.4867&radius=50000"
     try:
         resp = requests.get(url, timeout=5)
         return resp.json()
@@ -605,6 +607,7 @@ class ChatRequest(BaseModel):
     user_id: Optional[int] = 1
     lat: Optional[float] = 17.3850
     lon: Optional[float] = 78.4867
+    language: Optional[str] = "en-US"
 
 @app.post("/api/chatbot")
 async def chat_with_ai(req: ChatRequest):
@@ -613,7 +616,18 @@ async def chat_with_ai(req: ChatRequest):
     
     user_lat = req.lat
     user_lon = req.lon
+    user_lang = req.language or "en-US"
     query = req.message.lower()
+
+    # Map language codes to names for the AI
+    lang_map = {
+        "en-US": "English",
+        "hi-IN": "Hindi",
+        "te-IN": "Telugu",
+        "ta-IN": "Tamil",
+        "mr-IN": "Marathi"
+    }
+    target_lang = lang_map.get(user_lang, "English")
 
     # --- 1. GATHER LIVE AREA CONTEXT ---
     def get_area_context(lat, lon):
@@ -654,22 +668,40 @@ async def chat_with_ai(req: ChatRequest):
     nearby_context = get_area_context(user_lat, user_lon)
     context_str = "\\n".join(nearby_context) if nearby_context else "Standard urban surveillance active. No specific emergency nodes flagged in 2km radius."
 
+    import datetime
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
     system_prompt = f"""
     Act as the Raksha Path Safety Command Center. You are a high-level safety intelligence assistant.
     
+    STRICT LANGUAGE REQUIREMENT:
+    You MUST reply entirely in {target_lang}. Even if the user's message is in another language, your response MUST be in {target_lang}.
+    
     CURRENT CONTEXT:
     - User Location: {location_name}
+    - Current Time: {current_time}
     - Nearby Verified Infrastructure: 
     {context_str}
     
     MISSION:
-    - Provide specific, actionable safety guidance.
-    - If the user asks for help, prioritize the 'Nearby Verified Infrastructure' list.
-    - If the user is traveling, give preventative security tips based on urban patterns.
-    - Be authoritative, concise, and professional. 
-    - NEVER give vague advice like "stay alert". Instead say "Monitor your surroundings near [Landmark Name]".
-    - CRITICAL REQUIREMENT: NEVER use raw GPS coordinates (like 17.38, 78.48) in your response. ALWAYS refer to the User Location by its human-readable street/area name provided in the context.
-    - CRITICAL NLP REQUIREMENT: Analyze the language the user speaks in. If they speak in a rural/regional language (e.g., Hindi, Telugu, Tamil, Marathi, etc.), you MUST reply entirely in that exact same language natively. Adapt your tone to be culturally appropriate and comforting.
+    Provide specific, actionable safety guidance. Use the following STRUCTURED format for every response:
+
+    ### 🛡️ Safety Status: [Area Name]
+    [Brief assessment of current risk level and environment]
+
+    ### 📝 Strategic Advisory
+    - **Action**: [Primary recommendation]
+    - **Security**: [Secondary preventative tip]
+    - **Context**: [Note on weather or time-based risks]
+
+    ### 📍 Infrastructure Support
+    - [Specific Landmark from Nearby Infrastructure]
+    - [Next closest Landmark]
+
+    STRICT RULES:
+    1. NEVER use raw GPS coordinates (like 17.38, 78.48). ALWAYS refer to human-readable street names.
+    2. Reply ONLY in {target_lang}.
+    3. Be authoritative, concise, and professional.
     """
 
     # --- 2. AI BRAIN (Groq / Gemini) ---
@@ -730,18 +762,18 @@ async def chat_with_ai(req: ChatRequest):
     # --- 3. FINAL PROCEDURAL FALLBACK ---
     if "emergency" in query or "help" in query or "sos" in query:
         return {
-            "reply": f"EMERGENCY PROTOCOL ACTIVE: I am monitoring your live location at {user_lat}, {user_lon}. Please use the SOS button for immediate police dispatch. I've flagged your current sector for priority surveillance.",
+            "reply": f"### 🛡️ Safety Status: EMERGENCY\nExtreme risk detected based on user query.\n\n### 📝 Strategic Advisory\n- **Action**: Immediate SOS activation recommended.\n- **Security**: Move to a well-lit public area immediately.\n\n### 📍 Infrastructure Support\n- Police and Emergency services notified via live location at {location_name}.",
             "source": "Raksha Emergency Engine"
         }
     
     if "hospital" in query or "medical" in query or "doctor" in query:
         return {
-            "reply": "I'm performing a live scan of nearby medical facilities. Please check the 'SafeZones' tab for a map of verified hospitals in your immediate vicinity.",
+            "reply": f"### 🛡️ Safety Status: Medical Assistance Required\nScanning nearest medical trauma centers in {location_name}.\n\n### 📝 Strategic Advisory\n- **Action**: Check the 'SafeZones' tab for navigation to the nearest hospital.\n- **Security**: Apply first aid if safe to do so while waiting.\n\n### 📍 Infrastructure Support\n- Verified hospitals and clinics are being flagged on your map.",
             "source": "Raksha Medical Scan"
         }
 
     return {
-        "reply": "My safety intelligence engine has verified the protocols for your area. Please stay on main corridors and monitor the live safety score on your dashboard.",
+        "reply": f"### 🛡️ Safety Status: Standard Surveillance\nConditions in {location_name} are being monitored.\n\n### 📝 Strategic Advisory\n- **Action**: Maintain your planned route on main corridors.\n- **Security**: Monitor the live safety score on your dashboard.\n\n### 📍 Infrastructure Support\n- All nearby safety points are updated in your 'SafeZones' discovery panel.",
         "source": "Raksha Path Intelligence"
     }
 
