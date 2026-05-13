@@ -5,6 +5,8 @@ import ReactMarkdown from 'react-markdown';
 import { Send, Bot, User, Mic, Volume2, VolumeX, Activity } from 'lucide-react';
 import axios from 'axios';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`};`
+
 export default function Chatbot() {
   const [messages, setMessages] = useState([
     { role: 'bot', text: '### 🛡️ Safety Status: Online\nHello! I am your Raksha AI Assistant.\n\n### 📝 Strategic Advisory\n- **Ask**: "Nearest hospital?"\n- **Ask**: "Emergency protocols?"\n- **Ask**: "Current risk assessment?"' }
@@ -33,7 +35,7 @@ export default function Chatbot() {
         }
 
         const history = messages.map(m => ({ role: m.role, text: m.text }));
-        const res = await axios.post('http://localhost:8000/api/chatbot', { 
+        const res = await axios.post(`${API_URL}/api/chatbot`, { 
           message: text,
           history: history,
           lat: lat,

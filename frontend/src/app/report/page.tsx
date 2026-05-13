@@ -16,7 +16,7 @@ export default function ReportIncident() {
     e.preventDefault();
     setLoading(true);
     try {
-      await axios.post('http://localhost:8000/api/incidents', formData);
+      await axios.post('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/incidents', formData);
       alert('Incident reported successfully!');
       setFormData({ ...formData, description: '' });
     } catch (e) {

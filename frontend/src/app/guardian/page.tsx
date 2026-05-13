@@ -17,7 +17,7 @@ export default function Guardian() {
 
   const fetchContacts = async () => {
     try {
-      const res = await axios.get('http://localhost:8000/api/guardian/contacts?user_id=1');
+      const res = await axios.get('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/guardian/contacts?user_id=1');
       setContacts(res.data);
     } catch (e) {
       console.error("Failed to fetch contacts");
@@ -27,7 +27,7 @@ export default function Guardian() {
   const handleShare = async () => {
     setSharing(true);
     try {
-      const res = await axios.post('http://localhost:8000/api/guardian/share?user_id=1');
+      const res = await axios.post('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/guardian/share?user_id=1');
       setShareUrl(res.data.share_url);
       setIsActive(true);
     } catch (e) {
@@ -41,7 +41,7 @@ export default function Guardian() {
     e.preventDefault();
     if (newContact.name && newContact.phone) {
       try {
-        await axios.post('http://localhost:8000/api/guardian/contacts', newContact);
+        await axios.post('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/guardian/contacts', newContact);
         setNewContact({ name: '', phone: '', relation: 'Friend' });
         fetchContacts();
       } catch (e) {
@@ -52,7 +52,7 @@ export default function Guardian() {
 
   const removeContact = async (id: number) => {
     try {
-      await axios.delete(`http://localhost:8000/api/guardian/contacts/${id}`);
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/guardian/contacts/${id}`);
       fetchContacts();
     } catch (e) {
       alert('Failed to remove contact');

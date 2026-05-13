@@ -48,10 +48,10 @@ export default function SOSButton() {
     setLoading(true);
     try {
       // 1. Notify Backend / Guardian
-      await axios.post('http://localhost:8000/api/emergency/sos?user_id=1&lat=17.3850&lng=78.4867');
+      await axios.post('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/emergency/sos?user_id=1&lat=17.3850&lng=78.4867');
       
       // 2. Fetch Nearest Safe Zones
-      const res = await axios.get('http://localhost:8000/api/safezones/discovery?lat=17.3850&lon=78.4867');
+      const res = await axios.get('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/safezones/discovery?lat=17.3850&lon=78.4867');
       setSafezones(res.data);
 
       // Dispatch event to map if possible

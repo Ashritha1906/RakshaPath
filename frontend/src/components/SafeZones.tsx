@@ -37,7 +37,7 @@ export default function SafeZones({ lat, lon, onZonesFetched, onSelectZone }: Sa
     setLoading(true);
     try {
       // Pass is_route=true if we are fetching for a specific destination/route
-      const response = await fetch(`http://localhost:8000/safezones?lat=${lat}&lon=${lon}&is_route=${!!(lat && lon)}`);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/safezones?lat=${lat}&lon=${lon}&is_route=${!!(lat && lon)}`);
       if (!response.ok) throw new Error('Backend not reachable');
       const data: SafeZoneData = await response.json();
       

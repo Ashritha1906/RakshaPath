@@ -15,9 +15,9 @@ export default function InsightsPage() {
     const fetchData = async () => {
       try {
         const [areaRes, statsRes, forecastRes] = await Promise.all([
-          axios.get(`http://localhost:8000/api/insights/area/${selectedArea}`),
-          axios.get(`http://localhost:8000/api/insights/stats?area=${selectedArea}`),
-          axios.get(`http://localhost:8000/api/insights/forecast?area=${selectedArea}`)
+          axios.get(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/insights/area/${selectedArea}`),
+          axios.get(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/insights/stats?area=${selectedArea}`),
+          axios.get(`${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/insights/forecast?area=${selectedArea}`)
         ]);
         setAreaDetails(areaRes.data);
         setStats(statsRes.data);
