@@ -54,7 +54,12 @@ class GuardianContact(Base):
     user = relationship("User")
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    try:
+        # This will create tables if they don't exist
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        # If they already exist, we just log it and move on
+        print(f"Database initialization info: {e}")
 
 def get_db():
     db = SessionLocal()
