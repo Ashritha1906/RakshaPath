@@ -3,6 +3,7 @@
 import { BarChart3, Users, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { WeatherAnalyticsPanel } from '../../components/WeatherIntelligence';
 
 export default function InsightsPage() {
   const [selectedArea, setSelectedArea] = useState('Hitech City');
@@ -144,27 +145,31 @@ export default function InsightsPage() {
                 </div>
               </div>
 
-              <div className="glass-panel">
-                <h3 style={{ marginBottom: '20px' }}>Critical Safety Log</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {stats.recent_alerts.map((alert: any, i: number) => (
-                    <div key={i} style={{ 
-                      padding: '16px', 
-                      background: 'rgba(255,255,255,0.03)', 
-                      borderRadius: '12px',
-                      borderLeft: `4px solid ${alert.severity === 'High' ? 'var(--danger-red)' : alert.severity === 'Medium' ? 'var(--warn-yellow)' : 'var(--primary-color)'}`
-                    }}>
-                      <div className="flex-between" style={{ marginBottom: '4px' }}>
-                        <span style={{ fontSize: '0.7rem', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>{alert.type}</span>
-                        <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>{alert.time}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                <div className="glass-panel">
+                  <h3 style={{ marginBottom: '20px' }}>Critical Safety Log</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {stats.recent_alerts.map((alert: any, i: number) => (
+                      <div key={i} style={{ 
+                        padding: '16px', 
+                        background: 'rgba(255,255,255,0.03)', 
+                        borderRadius: '12px',
+                        borderLeft: `4px solid ${alert.severity === 'High' ? 'var(--danger-red)' : alert.severity === 'Medium' ? 'var(--warn-yellow)' : 'var(--primary-color)'}`
+                      }}>
+                        <div className="flex-between" style={{ marginBottom: '4px' }}>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 'bold', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>{alert.type}</span>
+                          <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>{alert.time}</span>
+                        </div>
+                        <p style={{ fontSize: '1rem', fontWeight: '600' }}>{alert.area}</p>
+                        <div style={{ marginTop: '8px', fontSize: '0.75rem', display: 'flex', gap: '8px' }}>
+                          <span style={{ color: alert.severity === 'High' ? 'var(--danger-red)' : 'inherit' }}>Priority: {alert.severity}</span>
+                        </div>
                       </div>
-                      <p style={{ fontSize: '1rem', fontWeight: '600' }}>{alert.area}</p>
-                      <div style={{ marginTop: '8px', fontSize: '0.75rem', display: 'flex', gap: '8px' }}>
-                        <span style={{ color: alert.severity === 'High' ? 'var(--danger-red)' : 'inherit' }}>Priority: {alert.severity}</span>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
+
+                <WeatherAnalyticsPanel city={selectedArea} />
               </div>
             </div>
 

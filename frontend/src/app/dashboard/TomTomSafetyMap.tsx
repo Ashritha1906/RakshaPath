@@ -115,6 +115,72 @@ export default function TomTomSafetyMap({
         markers.current.push(marker);
       });
     }
+    
+    // Add Weather Markers (if weather risk exceeds threshold)
+    if (selectedRoute?.details?.weather?.risk > 15) {
+      const w = selectedRoute.details.weather;
+      const weatherPos = selectedRoute.dest;
+      
+      const weatherElement = document.createElement('div');
+      weatherElement.className = 'weather-map-marker pulsing-weather';
+      weatherElement.style.width = '36px';
+      weatherElement.style.height = '36px';
+      weatherElement.style.borderRadius = '50%';
+      weatherElement.style.display = 'flex';
+      weatherElement.style.alignItems = 'center';
+      weatherElement.style.justifyContent = 'center';
+      weatherElement.style.fontSize = '20px';
+      
+      let icon = '☀️';
+      let bg = 'rgba(0, 210, 255, 0.25)';
+      let border = '2px solid var(--primary-color)';
+      const desc = (w.description || '').toLowerCase();
+      if (desc.includes('thunder') || desc.includes('storm')) {
+        icon = '⛈️';
+        bg = 'rgba(255, 23, 68, 0.3)';
+        border = '2px solid var(--danger-red)';
+      } else if (desc.includes('heavy rain') || desc.includes('torrential')) {
+        icon = '🌧️';
+        bg = 'rgba(255, 23, 68, 0.25)';
+        border = '2px solid var(--danger-red)';
+      } else if (desc.includes('rain') || desc.includes('drizzle') || desc.includes('shower')) {
+        icon = '🌦️';
+        bg = 'rgba(255, 152, 0, 0.25)';
+        border = '2px solid var(--warning-orange)';
+      } else if (desc.includes('fog') || desc.includes('mist') || desc.includes('haze') || w.visibility <= 3) {
+        icon = '🌫️';
+        bg = 'rgba(255, 255, 255, 0.2)';
+        border = '2px solid white';
+      } else if (w.windspeed >= 25.0) {
+        icon = '💨';
+        bg = 'rgba(255, 152, 0, 0.25)';
+        border = '2px solid var(--warning-orange)';
+      } else if (desc.includes('cloud')) {
+        icon = '☁️';
+        bg = 'rgba(255, 255, 255, 0.15)';
+        border = '1px solid rgba(255, 255, 255, 0.3)';
+      }
+      
+      weatherElement.style.background = bg;
+      weatherElement.style.border = border;
+      weatherElement.innerHTML = icon;
+      weatherElement.title = `Weather Hazard: ${w.description}`;
+      
+      const weatherMarker = new tt.Marker({ element: weatherElement })
+        .setLngLat([weatherPos.lng, weatherPos.lat])
+        .setPopup(new tt.Popup().setHTML(`
+          <div style="color: #000; padding: 8px; font-family: sans-serif; min-width: 160px;">
+            <h4 style="margin: 0 0 6px 0; color: ${w.risk >= 31 ? 'var(--danger-red)' : 'var(--warning-orange)'}; font-weight: bold; display: flex; align-items: center; gap: 5px;">⚠️ Weather Alert</h4>
+            <p style="margin: 4px 0; font-weight: bold; font-size: 0.85rem;">${w.description}</p>
+            <p style="margin: 2px 0; font-size: 0.75rem;">Temperature: ${w.temperature}°C</p>
+            <p style="margin: 2px 0; font-size: 0.75rem;">Wind Speed: ${w.windspeed} km/h</p>
+            <p style="margin: 2px 0; font-size: 0.75rem;">Rain Chance: ${w.chanceofrain}%</p>
+            <p style="margin: 6px 0 0 0; color: ${w.risk >= 31 ? 'var(--danger-red)' : 'var(--warning-orange)'}; font-weight: bold; font-size: 0.8rem; text-transform: uppercase;">Risk Level: ${w.risk_category || 'Moderate'}</p>
+          </div>
+        `))
+        .addTo(map.current);
+      markers.current.push(weatherMarker);
+    }
 
     // Add SafeZone markers (Hospitals/Police)
     if (zoneMarkers) {
@@ -152,7 +218,7 @@ export default function TomTomSafetyMap({
       });
     }
 
-    // Handle Heatmap Layer
+    // Handle Heatmap Layer & Weather Overlay
     if (mapLoaded && map.current) {
       const drawHeatmap = () => {
         try {
@@ -194,10 +260,88 @@ export default function TomTomSafetyMap({
         }
       };
 
+      const drawWeatherOverlay = () => {
+        if (!map.current) return;
+        if (!map.current.isStyleLoaded()) return;
+
+        try {
+          if (selectedRoute?.details?.weather?.risk > 15) {
+            const w = selectedRoute.details.weather;
+            const weatherPos = selectedRoute.dest;
+            const center = [weatherPos.lng, weatherPos.lat];
+            const radiusKm = 1.5;
+
+            const createCirclePolygon = (centerCoords: number[], radius: number) => {
+              const points = 64;
+              const coords = [];
+              const distanceX = radius / (111.32 * Math.cos(centerCoords[1] * Math.PI / 180));
+              const distanceY = radius / 110.574;
+              for (let i = 0; i < points; i++) {
+                const theta = (i / points) * (2 * Math.PI);
+                const x = distanceX * Math.cos(theta);
+                const y = distanceY * Math.sin(theta);
+                coords.push([centerCoords[0] + x, centerCoords[1] + y]);
+              }
+              coords.push(coords[0]);
+              return [coords];
+            };
+
+            const weatherGeojson = {
+              type: 'FeatureCollection',
+              features: [
+                {
+                  type: 'Feature',
+                  properties: {},
+                  geometry: {
+                    type: 'Polygon',
+                    coordinates: createCirclePolygon(center, radiusKm)
+                  }
+                }
+              ]
+            };
+
+            const isSevere = w.risk >= 31;
+            const overlayColor = isSevere ? '#ff1744' : '#ff9800';
+
+            if (map.current.getSource('weather-zone')) {
+              map.current.getSource('weather-zone').setData(weatherGeojson);
+              if (map.current.getLayer('weather-zone-layer')) {
+                map.current.setPaintProperty('weather-zone-layer', 'fill-color', overlayColor);
+              }
+            } else {
+              map.current.addSource('weather-zone', {
+                type: 'geojson',
+                data: weatherGeojson
+              });
+              map.current.addLayer({
+                id: 'weather-zone-layer',
+                type: 'fill',
+                source: 'weather-zone',
+                layout: {},
+                paint: {
+                  'fill-color': overlayColor,
+                  'fill-opacity': 0.25,
+                  'fill-outline-color': overlayColor
+                }
+              });
+            }
+          } else {
+            if (map.current.getLayer('weather-zone-layer')) map.current.removeLayer('weather-zone-layer');
+            if (map.current.getSource('weather-zone')) map.current.removeSource('weather-zone');
+          }
+        } catch (e) {
+          console.warn("Weather overlay error:", e);
+        }
+      };
+
       if (!map.current.isStyleLoaded()) {
-        map.current.once('styledata', drawHeatmap);
+        map.current.once('styledata', () => {
+          drawHeatmap();
+          drawWeatherOverlay();
+        });
       } else {
         drawHeatmap();
+        drawWeatherOverlay();
       }
     }
   }, [crimeMarkers, zoneMarkers, currentPos, selectedRoute, showHeatmap, mapLoaded]);

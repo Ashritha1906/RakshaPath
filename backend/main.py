@@ -9,6 +9,7 @@ from app.database import init_db, get_db, User, IncidentReport, GuardianTrack, G
 from pydantic import BaseModel
 from typing import List, Optional
 from routes.safezones import router as safezone_router
+from routes.weather import router as weather_router
 
 # Load env variables if available
 from dotenv import load_dotenv
@@ -26,6 +27,7 @@ app.add_middleware(
 )
 
 app.include_router(safezone_router)
+app.include_router(weather_router)
 
 @app.on_event("startup")
 def on_startup():
@@ -330,20 +332,18 @@ def discover_safezones(lat: float, lon: float):
     }
 
 def fetch_weather(lat, lon):
-    api_key = os.getenv("OPENWEATHER_API_KEY")
-    if not api_key:
-        return {"main": "Clear", "description": "clear sky", "temp": 30}
+    # Adapter function using the new weather service to preserve backwards compatibility
+    from services.weather_service import fetch_weather_data, parse_weather_condition
     try:
-        url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric"
-        resp = requests.get(url, timeout=5)
-        if resp.status_code == 200:
-            data = resp.json()
-            return {
-                "main": data["weather"][0]["main"],
-                "description": data["weather"][0]["description"],
-                "temp": data["main"]["temp"]
-            }
-    except: pass
+        raw_data = fetch_weather_data(lat=lat, lon=lon)
+        parsed = parse_weather_condition(raw_data)
+        return {
+            "main": parsed["description"],
+            "description": parsed["description"],
+            "temp": parsed["temperature"]
+        }
+    except Exception as e:
+        print(f"fetch_weather compat error: {e}")
     return {"main": "Clear", "description": "clear sky", "temp": 30}
 
 def check_local_events(lat, lon):
@@ -535,9 +535,40 @@ def analyze_safety(data: dict, db: Session = Depends(get_db)):
         
         crime_risk = min((crime_count * 0.25) + ((seed % 20) / 100.0), 1.0)
         accident_risk = min((accident_count * 0.3) + (((seed * 2) % 20) / 100.0), 1.0)
-        weather_risk = 0.2 if fetch_weather(dest_lat, dest_lng)["main"] in ["Rain", "Drizzle", "Thunderstorm"] else 0.05
+        
+        # Fetch actual weather details from wttr.in
+        from services.weather_service import fetch_weather_data, parse_weather_condition, calculate_weather_risk
+        raw_weather = fetch_weather_data(lat=dest_lat, lon=dest_lng)
+        weather_info = parse_weather_condition(raw_weather)
+        risk_info = calculate_weather_risk(weather_info)
+        
+        # Weather risk normalized (0.0 to 1.0)
+        weather_risk = min(1.0, float(risk_info["risk_score"]) / 50.0)
+        
+        # Traffic Risk (15%) - check TomTom incidents or fallback to seed
+        tomtom_key = os.getenv("NEXT_PUBLIC_TOMTOM_API_KEY")
+        traffic_count = 0
+        if tomtom_key:
+            try:
+                bbox = f"{dest_lng-0.03},{dest_lat-0.03},{dest_lng+0.03},{dest_lat+0.03}"
+                url = f"https://api.tomtom.com/traffic/services/4/incidentDetails/s3/{bbox}/11/-1/json?key={tomtom_key}"
+                resp = requests.get(url, timeout=3)
+                if resp.status_code == 200:
+                    incidents = resp.json().get("tm", {}).get("poi", [])
+                    traffic_count = len(incidents)
+            except Exception as e:
+                print(f"TomTom Traffic Risk fetch error: {e}")
+                
+        if traffic_count > 0:
+            traffic_risk = min(traffic_count * 0.2, 1.0)
+        else:
+            traffic_risk = ((seed * 4) % 100) / 100.0
+
+        # Crowdsourced Reports (10%) - count of user reports near destination
+        crowdsourced_risk = min(len(nearby_incidents) * 0.1, 1.0)
+        
+        # Auxiliary isolation_risk for backward-compatible/detailed analysis
         isolation_risk = ((seed * 3) % 100) / 100.0
-        crowd_risk = len(nearby_incidents) * 0.1
         
         # Apply Profile Modifications
         if profile == "Women commuter":
@@ -548,19 +579,22 @@ def analyze_safety(data: dict, db: Session = Depends(get_db)):
         elif profile == "Delivery rider":
             accident_risk *= 1.5
             weather_risk *= 1.2
+            traffic_risk *= 1.3
         elif profile == "Senior citizen":
             isolation_risk *= 1.3
-            crowd_risk *= 1.4
+            traffic_risk *= 1.2
+            crowdsourced_risk *= 1.4
 
         # Normalize back to max 1.0 after modifiers
         crime_risk = min(1.0, crime_risk)
         accident_risk = min(1.0, accident_risk)
+        weather_risk = min(1.0, weather_risk)
+        traffic_risk = min(1.0, traffic_risk)
+        crowdsourced_risk = min(1.0, crowdsourced_risk)
         isolation_risk = min(1.0, isolation_risk)
-        crowd_risk = min(1.0, crowd_risk)
         
-        # Apply Formula
-        # Crime = 30%, Accidents = 25%, Weather = 20%, Isolation = 15%, Crowd = 10%
-        risk_score_percentage = (crime_risk * 0.30) + (accident_risk * 0.25) + (weather_risk * 0.20) + (isolation_risk * 0.15) + (crowd_risk * 0.10)
+        # Apply Formula: Crime = 30%, Accidents = 25%, Weather = 20%, Traffic = 15%, Crowdsourced Reports = 10%
+        risk_score_percentage = (crime_risk * 0.30) + (accident_risk * 0.25) + (weather_risk * 0.20) + (traffic_risk * 0.15) + (crowdsourced_risk * 0.10)
         risk_score_percentage = int(risk_score_percentage * 100)
         
         # Adjust with user preference (0 = speed/high risk tolerance, 100 = safety)
@@ -571,9 +605,11 @@ def analyze_safety(data: dict, db: Session = Depends(get_db)):
         reasons = []
         if crime_risk > 0.6: reasons.append("Passes through known crime hotspots.")
         if accident_risk > 0.6: reasons.append("Includes accident-prone intersections.")
-        if weather_risk > 0.1: reasons.append("Current weather reduces visibility.")
-        if isolation_risk > 0.6: reasons.append("Contains poorly lit, isolated roads.")
-        if crowd_risk > 0.6: reasons.append("High pedestrian density reported.")
+        if weather_risk > 0.3: reasons.append(f"Weather hazard: {risk_info['reason']}")
+        elif weather_risk > 0.1: reasons.append("Current weather reduces visibility.")
+        if traffic_risk > 0.6: reasons.append("High traffic congestion detected on route.")
+        if crowdsourced_risk > 0.5: reasons.append("Multiple live user-reported incidents in this sector.")
+        if isolation_risk > 0.7: reasons.append("Contains poorly lit, isolated roads.")
         
         if not reasons:
             reasons.append("Standard urban route conditions.")
@@ -584,10 +620,21 @@ def analyze_safety(data: dict, db: Session = Depends(get_db)):
             "crime_risk": crime_risk,
             "accident_risk": accident_risk,
             "weather_risk": weather_risk,
+            "traffic_risk": traffic_risk,
+            "crowdsourced_risk": crowdsourced_risk,
             "isolation_risk": isolation_risk,
-            "crowd_risk": crowd_risk,
             "reasons": reasons,
-            "weather": fetch_weather(dest_lat, dest_lng),
+            "weather": {
+                "temperature": weather_info["temperature"],
+                "humidity": weather_info["humidity"],
+                "visibility": weather_info["visibility"],
+                "windspeed": weather_info["wind_speed"],
+                "description": weather_info["description"],
+                "chanceofrain": weather_info["chance_of_rain"],
+                "risk": risk_info["risk_score"],
+                "risk_category": risk_info["risk_category"],
+                "reason": risk_info["reason"]
+            },
             "history": "Dynamic Risk Assessment generated based on live environmental and historical data."
         }
     except Exception as e:

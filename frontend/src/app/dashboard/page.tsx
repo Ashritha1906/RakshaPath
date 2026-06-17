@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Navigation, MapPin, ShieldAlert, Navigation2, Menu, LocateFixed, Search, Activity, Info, AlertTriangle, Eye, EyeOff, RefreshCcw, CheckCircle2, ShieldCheck, Zap, Layers, Bot } from 'lucide-react';
 import SafeZones from '../../components/SafeZones';
+import { WeatherCard, WeatherAlertBanner } from '../../components/WeatherIntelligence';
 import axios from 'axios';
 import Head from 'next/head';
 import dynamic from 'next/dynamic';
@@ -45,9 +46,12 @@ export default function Dashboard() {
     anonymous: true
   });
 
-  // Preferences State
   const [activeProfile, setActiveProfile] = useState('General traveler');
   const [activeWeight, setActiveWeight] = useState(50);
+  
+  // Weather states
+  const [activeWeatherAlerts, setActiveWeatherAlerts] = useState<any[]>([]);
+  const [activeWeatherData, setActiveWeatherData] = useState<any>(null);
   
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -89,10 +93,35 @@ export default function Dashboard() {
       .catch(err => console.error(err));
   }, []);
 
+  const fetchDefaultWeather = useCallback(async () => {
+    try {
+      const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/weather/current?city=Hyderabad`;
+      const riskUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/weather/risk?city=Hyderabad`;
+      const alertsUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/weather/alerts?city=Hyderabad`;
+      
+      const [currRes, riskRes, alertsRes] = await Promise.all([
+        axios.get(url),
+        axios.get(riskUrl),
+        axios.get(alertsUrl)
+      ]);
+
+      setActiveWeatherData({
+        ...currRes.data,
+        risk: riskRes.data.risk_score,
+        risk_category: riskRes.data.risk_category,
+        reason: riskRes.data.reason
+      });
+      setActiveWeatherAlerts(alertsRes.data);
+    } catch (err) {
+      console.error("Failed to load default weather:", err);
+    }
+  }, []);
+
   useEffect(() => {
     updateLocation();
     fetchHeatmap();
-  }, [updateLocation, fetchHeatmap]);
+    fetchDefaultWeather();
+  }, [updateLocation, fetchHeatmap, fetchDefaultWeather]);
 
   const submitReport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,6 +230,56 @@ export default function Dashboard() {
         weight: userWeight
       });
       const safety = safetyRes.data;
+
+      // Update weather data state
+      setActiveWeatherData(safety.weather);
+
+      // Speak weather warning
+      const speak = (text: string) => {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.pitch = 1.0;
+          utterance.rate = 0.95;
+          window.speechSynthesis.speak(utterance);
+        }
+      };
+
+      try {
+        const alertsRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/weather/alerts?lat=${end.lat}&lon=${end.lng}`);
+        setActiveWeatherAlerts(alertsRes.data);
+        
+        if (safety.weather && safety.weather.risk > 15) {
+          if (typeof window !== 'undefined') {
+            const alertEvent = new CustomEvent('raksha-alert', {
+              detail: {
+                id: Date.now(),
+                type: safety.weather.risk >= 31 ? 'danger' : 'warning',
+                title: `${safety.weather.risk_category} Weather Alert`,
+                message: safety.weather.reason
+              }
+            });
+            window.dispatchEvent(alertEvent);
+          }
+
+          let alertMsg = "";
+          const desc = safety.weather.description.toLowerCase();
+          if (desc.includes("heavy rain") || desc.includes("torrential")) {
+            alertMsg = "Warning. Heavy rainfall detected on your route.";
+          } else if (desc.includes("thunder") || desc.includes("storm")) {
+            alertMsg = "Warning. Thunderstorm warning issued.";
+          } else if (safety.weather.visibility <= 3.0) {
+            alertMsg = "Visibility is low in the upcoming sector.";
+          } else if (safety.weather.windspeed >= 25.0) {
+            alertMsg = "Warning. High wind conditions detected.";
+          } else {
+            alertMsg = `Caution. Weather alert: ${safety.weather.reason}`;
+          }
+          if (alertMsg) speak(alertMsg);
+        }
+      } catch (err) {
+        console.error("Alert fetch failed:", err);
+      }
 
       setRoutes([
         { 
@@ -337,6 +416,7 @@ export default function Dashboard() {
 
 
       <main style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <WeatherAlertBanner alerts={activeWeatherAlerts} />
         {/* TOP SAFETY STATUS BAR */}
         <div className="glass-panel flex-between" style={{ padding: '12px 24px', borderLeft: '4px solid var(--primary-color)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -362,6 +442,7 @@ export default function Dashboard() {
 
         <div style={{ display: 'flex', gap: '24px', flex: 1 }}>
           <div style={{ flex: '0 0 400px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <WeatherCard weather={activeWeatherData} />
             <div className="glass-panel">
               <div className="flex-between" style={{ marginBottom: '16px' }}>
                 <h2 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px' }}><ShieldCheck size={20} color="var(--primary-color)"/> Safety Analysis</h2>
@@ -465,8 +546,8 @@ export default function Dashboard() {
                       { label: 'Crime Risk', val: r.details.crime_risk || 0, color: '#ff1744' },
                       { label: 'Accident Risk', val: r.details.accident_risk || 0, color: '#ff9800' },
                       { label: 'Weather Risk', val: r.details.weather_risk || 0, color: '#00d2ff' },
-                      { label: 'Isolation Risk', val: r.details.isolation_risk || 0, color: '#8e2de2' },
-                      { label: 'Crowd Risk', val: r.details.crowd_risk || 0, color: '#00e676' }
+                      { label: 'Traffic Risk', val: r.details.traffic_risk || 0, color: '#8e2de2' },
+                      { label: 'Crowdsourced Reports', val: r.details.crowdsourced_risk || 0, color: '#00e676' }
                     ].map((metric, i) => {
                       const percentage = Math.round(metric.val * 100);
                       const displayColor = percentage > 60 ? 'var(--danger-red)' : percentage > 30 ? '#ff9800' : 'var(--safe-green)';
@@ -522,6 +603,42 @@ export default function Dashboard() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <WeatherCard weather={selectedRoute.details.weather} />
+
+                  {selectedRoute.details.weather?.risk >= 31 && (
+                    <div className="glass-panel safety-glow animate-fade-in" style={{ borderColor: 'var(--danger-red)', background: 'rgba(255, 23, 68, 0.08)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <h4 style={{ color: 'var(--danger-red)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', margin: 0 }}>
+                        <ShieldAlert size={18} className="pulsing-alert" /> Severe Weather Emergency Mode
+                      </h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                        Weather conditions are hazardous. We recommend:
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                        <button 
+                          type="button"
+                          onClick={() => setShowSafeZones(true)} 
+                          className="btn-primary" 
+                          style={{ padding: '8px 12px', fontSize: '0.75rem', background: 'var(--primary-color)', color: 'black', width: '100%', fontWeight: 'bold' }}
+                        >
+                          📍 Find Nearest Hospital / Safe Zone
+                        </button>
+                        {selectedRoute.id !== 'S' && (
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const safest = routes.find(r => r.id === 'S');
+                              if (safest) startNavigation(safest);
+                            }} 
+                            className="btn-secondary" 
+                            style={{ padding: '8px 12px', fontSize: '0.75rem', width: '100%', borderColor: 'rgba(255,255,255,0.2)' }}
+                          >
+                            🔄 Switch to Safest Route
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="audit-item">
                     <p style={{ fontSize: '0.8rem', fontWeight: 'bold', color: selectedRoute.score > 70 ? 'var(--safe-green)' : 'var(--danger-red)', display: 'flex', alignItems: 'center', gap: '5px' }}><CheckCircle2 size={14}/> Risk Factors:</p>
                     <ul style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', paddingLeft: '20px', marginTop: '5px' }}>
@@ -536,7 +653,9 @@ export default function Dashboard() {
                       {[
                         { label: 'Crime Exposure', val: selectedRoute.details.crime_risk || 0 },
                         { label: 'Accident History', val: selectedRoute.details.accident_risk || 0 },
-                        { label: 'Isolation Level', val: selectedRoute.details.isolation_risk || 0 },
+                        { label: 'Weather Risk', val: selectedRoute.details.weather_risk || 0 },
+                        { label: 'Traffic Congestion', val: selectedRoute.details.traffic_risk || 0 },
+                        { label: 'Crowdsourced Reports', val: selectedRoute.details.crowdsourced_risk || 0 },
                       ].map((metric, i) => {
                         const percentage = Math.round(metric.val * 100);
                         const displayColor = percentage > 60 ? 'var(--danger-red)' : percentage > 30 ? '#ff9800' : 'var(--safe-green)';
