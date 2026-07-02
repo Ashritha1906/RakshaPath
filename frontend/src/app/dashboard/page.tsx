@@ -229,7 +229,7 @@ export default function Dashboard() {
         profile: userProfile,
         weight: userWeight
       });
-      const safety = safetyRes.data;
+      const safety = safetyRes.data as any;
 
       // Update weather data state
       setActiveWeatherData(safety.weather);
@@ -281,7 +281,7 @@ export default function Dashboard() {
         console.error("Alert fetch failed:", err);
       }
 
-      setRoutes([
+      const calculatedRoutes = [
         { 
           id: 'F', 
           type: 'Fastest Route', 
@@ -321,7 +321,14 @@ export default function Dashboard() {
           time: "18 min",
           distance: "4.5 km"
         }
-      ]);
+      ];
+      setRoutes(calculatedRoutes);
+
+      // Automatically map and display the Balanced Route on search completion
+      const balanced = calculatedRoutes.find(r => r.id === 'B');
+      if (balanced) {
+        startNavigation(balanced);
+      }
     } catch (e: any) {
       console.error("Search error:", e);
       if (e.message === "Network Error") {
@@ -719,7 +726,7 @@ export default function Dashboard() {
                       const end = { lat: zone.lat, lng: zone.lon };
                       
                       const safetyRes = await axios.post(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/safety/analyze`, { origin: start, dest: end });
-                      const safety = safetyRes.data;
+                      const safety = safetyRes.data as any;
 
                       const route = { 
                         id: 'S', 
