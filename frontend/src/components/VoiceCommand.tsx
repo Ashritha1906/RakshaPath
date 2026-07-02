@@ -64,14 +64,14 @@ export default function VoiceCommand() {
     showFeedback('Analyzing request...');
     
     try {
-      const response = await axios.post('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/voice/intent', { transcript });
+      const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/voice/intent`, { transcript });
       const intent = response.data.intent;
       
       switch(intent) {
         case 'SOS':
           showFeedback('SOS Activated');
           speak('Activating Emergency SOS Protocols.');
-          axios.post('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/emergency/sos?user_id=1&lat=17.3850&lng=78.4867').catch(() => {});
+          axios.post(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/emergency/sos?user_id=1&lat=17.3850&lng=78.4867`).catch(() => {});
           break;
         case 'GUARDIAN':
           showFeedback('Calling Guardian...');

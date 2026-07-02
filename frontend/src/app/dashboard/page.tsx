@@ -82,7 +82,7 @@ export default function Dashboard() {
   }, []);
 
   const fetchHeatmap = useCallback(() => {
-    axios.get('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/insights/heatmap')
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/insights/heatmap`)
       .then(res => {
         setCrimeMarkers(res.data);
         if (typeof window !== 'undefined' && (window as any).google) {
@@ -126,7 +126,7 @@ export default function Dashboard() {
   const submitReport = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.post('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/incidents', {
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/incidents`, {
         user_id: reportData.anonymous ? null : 1,
         incident_type: reportData.type,
         description: reportData.desc,
@@ -223,7 +223,7 @@ export default function Dashboard() {
       const userProfile = localStorage.getItem('raksha_profile') || 'General traveler';
       const userWeight = parseInt(localStorage.getItem('raksha_safety_weight') || '50');
       
-      const safetyRes = await axios.post('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/safety/analyze', { 
+      const safetyRes = await axios.post(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/safety/analyze`, { 
         origin: start, 
         dest: end,
         profile: userProfile,
@@ -718,7 +718,7 @@ export default function Dashboard() {
                       const start = currentPos;
                       const end = { lat: zone.lat, lng: zone.lon };
                       
-                      const safetyRes = await axios.post('${process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}`}/api/safety/analyze', { origin: start, dest: end });
+                      const safetyRes = await axios.post(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/safety/analyze`, { origin: start, dest: end });
                       const safety = safetyRes.data;
 
                       const route = { 
